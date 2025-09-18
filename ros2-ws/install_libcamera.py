@@ -116,6 +116,65 @@ def main():
     print_info("克隆libcamera仓库...")
     if not run_command(f"git clone https://git.libcamera.org/libcamera/libcamera.git {build_dir}"):
         sys.exit(1)
+
+    # 自动测速并切换 libyuv 源
+    import socket
+    def test_git_source(url, timeout=5):
+        try:
+            start = time.time()
+            # 只测试域名连通性
+            domain = url.split('/')[2]
+            socket.setdefaulttimeout(timeout)
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((domain, 443))
+            s.close()
+            return time.time() - start
+        except Exception:
+            return float('inf')
+
+    libyuv_sources = [
+        "https://chromium.googlesource.com/libyuv/libyuv.git",
+        "https://github.com/lemenkov/libyuv.git",
+        "https://github.com/libyuv/libyuv.git",
+        "https://gitee.com/mirrors/libyuv.git",
+        "https://gitlab.com/libyuv/libyuv.git",
+        "https://hub.fastgit.xyz/libyuv/libyuv.git",
+        "https://gitclone.com/github.com/libyuv/libyuv.git"
+    ]
+    print_info("正在测速 libyuv 源...")
+    speeds = [(src, test_git_source(src)) for src in libyuv_sources]
+    speeds.sort(key=lambda x: x[1])
+    best_src = speeds[0][0] if speeds[0][1] != float('inf') else libyuv_sources[1]
+    print_info(f"选择最快的 libyuv 源: {best_src}")
+
+    meson_build_path = os.path.join(build_dir, "src", "meson.build")
+    local_libyuv_path = os.path.join(build_dir, "src", "libyuv")
+    if os.path.exists(meson_build_path):
+        try:
+            with open(meson_build_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            if os.path.exists(local_libyuv_path):
+                # 优先使用本地 libyuv
+                print_info("检测到本地 libyuv 源码，优先使用本地路径...")
+                new_content = content.replace(
+                    "chromium.googlesource.com/libyuv/libyuv.git",
+                    "libyuv"
+                )
+            else:
+                new_content = content.replace(
+                    "chromium.googlesource.com/libyuv/libyuv.git",
+                    best_src.replace("https://",""").replace("http://",""")
+                )
+            if new_content != content:
+                with open(meson_build_path, "w", encoding="utf-8") as f:
+                    f.write(new_content)
+                print_info("已自动切换 libyuv 源为: {}".format("本地路径" if os.path.exists(local_libyuv_path) else best_src))
+            else:
+                print_info("meson.build 文件中未发现 libyuv 源，无需替换")
+        except Exception as e:
+            print_error(f"切换 libyuv 源时出错: {e}")
+    else:
+        print_error(f"未找到 meson.build 文件: {meson_build_path}")
     
     # 初始化子模块
     print_info("初始化子模块...")
@@ -132,7 +191,7 @@ def main():
     
     # 配置构建
     print_info("配置libcamera构建...")
-    if not run_command(f"cd {build_subdir} && meson setup -Dpipelines=all -Dtest=false -Ddocumentation=false .."):
+    if not run_command(f"cd {build_subdir} && meson setup -Dpipelines=all -Dtest=false -Ddocumentation=disabled .."):
         sys.exit(1)
     
     # 编译
