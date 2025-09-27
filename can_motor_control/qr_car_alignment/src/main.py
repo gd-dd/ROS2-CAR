@@ -44,8 +44,8 @@ def main():
         "--inline",                        # 内联MJPEG帧头
         "-o", "/dev/shm/cam.mjpeg"         # 将输出保存到共享内存文件
     ])
-    # 等待0.5秒，让摄像头有时间初始化
-    time.sleep(0.5)
+    # 等待0秒，让摄像头有时间初始化
+    time.sleep(1)
 
     # 使用OpenCV打开共享内存中的摄像头流
     cap = cv2.VideoCapture('/dev/shm/cam.mjpeg')
@@ -85,7 +85,7 @@ def main():
     # 记录开始时间，用于计算帧率
     start_time = time.time()
     # 目标帧数，理论上应该达到的帧数
-    logical_frame = 0  # 目标帧数
+    logical_frame = 50  # 目标帧数
     # 当前实际处理的帧数
     current_frame = 0  # 当前帧数
     # 上次跳过的帧数
