@@ -139,8 +139,8 @@ class RemoteControlWindow(QWidget):
         L = 80  # 前后长
         W = 60  # 左右宽
         # 菱形麦克纳姆轮速度解算（左前、右前、右后、左后）
-        v1 = speed * (y - x + yaw * 1.3)   # 左前
-        v2 = speed * (-y - x + yaw * 1.3)  # 右前
+        v1 = speed * (y - x + yaw )   # 左前
+        v2 = speed * (-y - x + yaw)  # 右前
         v3 = speed * (-y + x + yaw)  # 右后
         v4 = speed * (y + x + yaw )   # 左后
         speeds = [v1, v2, v3, v4]

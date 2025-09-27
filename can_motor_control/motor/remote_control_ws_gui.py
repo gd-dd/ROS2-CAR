@@ -74,14 +74,18 @@ class RemoteControlWSGUI:
             time.sleep(0.1)
 
     def control_loop(self):
-        # 麦克纳姆轮速度解算
+        # 麦克纳姆轮速度解算 - 与remote_control_gui.py保持一致
         x, y = self.joy  # [-1,1]
         speed = self.throttle1  # 速度
         yaw = self.throttle2    # yaw
-        v1 = speed * (x + y + yaw)
-        v2 = speed * (x - y - yaw)
-        v3 = speed * (x - y + yaw)
-        v4 = speed * (x + y - yaw)
+        # 车体参数 - 与remote_control_gui.py保持一致
+        L = 80  # 前后长
+        W = 60  # 左右宽
+        # 菱形麦克纳姆轮速度解算（左前、右前、右后、左后）
+        v1 = speed * (y - x + yaw )   # 左前
+        v2 = speed * (-y - x + yaw)  # 右前
+        v3 = speed * (-y + x + yaw)  # 右后
+        v4 = speed * (y + x + yaw )   # 左后
         speeds = [v1, v2, v3, v4]
         send_motor_speeds(self.buses, speeds)
 

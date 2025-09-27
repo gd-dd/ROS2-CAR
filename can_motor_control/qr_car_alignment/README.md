@@ -1,79 +1,233 @@
-# QR Car Alignment Project
+# QR Car Alignment 二维码定位系统
 
-This project implements an automated car alignment system using QR code detection. The car will adjust its position based on the detected QR codes in the environment.
+该项目实现了一个基于二维码检测的自动小车定位和控制系统。通过摄像头实时捕捉环境图像，检测二维码，并根据检测结果控制小车的移动，实现精确的视觉引导导航。
 
-## Installation Instructions
+## 核心功能概述
 
-1. Install dependencies:
-   Run the following command in the project root directory to install the required libraries:
-   ```
-   pip install -r requirements.txt
-   ```
+- 实时摄像头图像采集与处理
+- 二维码检测与内容识别
+- 基于检测结果的小车运动控制
+- 跳帧机制确保系统实时性
+- TCP通信功能将检测结果发送到其他系统
 
-2. Run the program:
-   Use the following command to start the program:
-   ```
-   python src/main.py
-   ```
+## 系统架构与工作流程
 
-## Project Structure
+### 整体架构
 
-- `src/main.py`: The entry point of the program. It initializes the camera, calls the QR detector, and controls the car's movement based on the detected QR code position.
-  
-- `src/car_control.py`: Contains the `CarController` class, which controls the car's movement. It provides methods to move forward, move backward, turn left, and turn right to adjust the car's direction and speed based on the QR code's position.
-
-- `src/qr_detector.py`: Contains the `QRDetector` class, which uses OpenCV to detect QR codes in the images captured by the camera. It provides a method to detect QR codes and return their positions and data.
-
-- `src/utils.py`: Contains utility functions, such as image processing and coordinate transformation helpers.
-
-- `requirements.txt`: Lists the required Python libraries for the project, including `opencv-python` and `pyzbar` for QR code detection.
-
-## Example Script
-
-Here is an example code snippet for `src/main.py`:
-
-```python
-import cv2
-from car_control import CarController
-from qr_detector import QRDetector
-
-def main():
-    car = CarController()
-    qr_detector = QRDetector()
-    
-    cap = cv2.VideoCapture(0)  # Open the camera
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        
-        qr_data, qr_position = qr_detector.detect_qr_code(frame)
-        
-        if qr_data:
-            # Control the car based on QR code position
-            car.align_to_qr(qr_position)
-        
-        cv2.imshow("Camera", frame)
-        
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-if __name__ == "__main__":
-    main()
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ 摄像头采集  │ ──> │ 图像预处理  │ ──> │ 二维码检测  │ ──> │ 小车控制    │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+        │                                        │
+        ▼                                        ▼
+┌─────────────┐                            ┌─────────────┐
+│ 显示与交互  │                            │ TCP通信     │
+└─────────────┘                            └─────────────┘
 ```
 
-## Model Training Methods
+### 工作流程
 
-To improve the accuracy of QR code detection, consider the following methods:
+1. 初始化小车控制器，配置CAN总线和电机参数
+2. 启动心跳线程，保持与电机的通信
+3. 启动摄像头流，捕获实时图像
+4. 对图像进行预处理（灰度转换、高斯模糊）
+5. 检测二维码并识别内容
+6. 根据二维码检测结果控制小车移动
+7. 通过TCP协议将检测结果发送到其他系统
+8. 在窗口中显示处理后的图像和状态信息
 
-1. **Data Collection**: Gather QR code images under various environmental and lighting conditions.
-2. **Data Augmentation**: Use image processing techniques (such as rotation, scaling, flipping, etc.) to enhance the dataset.
-3. **Model Selection**: Choose an appropriate deep learning model (like YOLO, SSD, etc.) for training.
-4. **Training**: Train the model using the collected data, adjusting hyperparameters to optimize performance.
-5. **Evaluation**: Assess the model's accuracy on a test set and make necessary adjustments.
+## 关键模块详解
 
-By following these steps, you can train a QR code detection model suitable for specific environments.
+### 1. 主程序模块 (main.py)
+
+主程序模块是整个系统的入口，负责协调各组件的工作，实现了完整的二维码检测与小车控制流程。
+
+**核心功能点：**
+- 初始化摄像头、二维码检测器和小车控制器
+- 启动心跳线程确保电机控制稳定
+- 实现跳帧机制保持系统实时性
+- 处理二维码检测结果并控制小车运动
+- 显示处理结果和状态信息
+
+**跳帧曲线实现详解：**
+
+系统实现了一种智能的跳帧机制，用于在计算资源有限的情况下保持视频流的实时性。该机制通过比较"当前处理帧数"与"理论目标帧数"之间的差值，动态决定需要跳过的帧数。
+
+```python
+# 初始化帧计数器
+logical_frame = 0  # 目标帧数，基于时间计算
+current_frame = 0  # 当前实际处理的帧数
+
+while True:
+    now = time.time()
+    # 计算理论上应该处理到的帧数
+    logical_frame = int((now - start_time) * target_fps)
+    
+    # 更陡峭的跳帧曲线：如果落后帧数>6跳3帧，>3跳2帧，>1跳1帧，否则不跳
+    diff = logical_frame - current_frame
+    if diff > 6:
+        jump = 3
+    elif diff > 3:
+        jump = 2
+    elif diff > 1:
+        jump = 1
+    else:
+        jump = 0
+    
+    # 执行跳帧操作
+    for _ in range(jump):
+        cap.grab()  # 抓取但不解码帧
+        current_frame += 1
+    
+    # 读取并处理一帧
+    ret, frame = cap.read()
+    current_frame += 1
+```
+
+**跳帧曲线的工作原理：**
+
+1. **帧数计算**：系统根据当前时间和目标帧率(`target_fps`)计算理论上应该处理到的目标帧数
+2. **差异检测**：计算实际处理帧数与目标帧数之间的差值`diff`
+3. **动态调整**：根据差值大小动态决定跳过的帧数：
+   - 如果落后6帧以上：跳过3帧，快速追赶
+   - 如果落后3-6帧：跳过2帧，中等速度追赶
+   - 如果落后1-3帧：跳过1帧，缓慢追赶
+   - 如果基本同步：不跳帧，保持最佳画质
+4. **帧同步**：处理完当前帧后，如果仍然超前于目标帧，则通过延时等待确保严格按照目标帧率运行
+
+这种"更陡峭的跳帧曲线"设计在系统负载较重时能够快速调整，确保实时性；而在负载较轻时则保持较高的处理精度，是一种平衡实时性和处理质量的优化方案。
+
+### 2. 小车控制模块 (car_control.py)
+
+该模块实现了通过CAN总线控制小车电机的功能，提供了前进、后退、转向等基本运动控制方法。
+
+**核心功能：**
+- 初始化CAN总线并配置通信参数
+- 实现心跳机制，确保与电机的稳定通信
+- 提供多种运动控制方法：前进、后退、左右转向、停车等
+- 支持基于二维码位置的对齐控制
+
+**电机配置：**
+
+```python
+MOTORS = [
+    {"id": 0x65, "channel": "can0"},  # 左前
+    {"id": 0x66, "channel": "can0"},  # 右前
+    {"id": 0x67, "channel": "can1"},  # 左后
+    {"id": 0x68, "channel": "can1"},  # 右后
+]
+station_nos = [0x01, 0x02, 0x03, 0x04]
+```
+
+### 3. 二维码检测模块 (qr_detector.py)
+
+该模块封装了OpenCV的二维码检测功能，提供了简洁的接口来检测图像中的二维码并返回其内容和位置信息。
+
+**核心功能：**
+- 初始化OpenCV的二维码检测器
+- 检测图像中的二维码
+- 计算二维码的中心坐标
+- 返回二维码内容和位置信息
+
+### 4. 工具函数模块 (utils.py)
+
+该模块提供了一系列辅助函数，用于图像处理、坐标转换和距离计算等功能。
+
+**核心功能：**
+- 图像预处理（灰度转换、高斯模糊）
+- 坐标转换（归一化坐标转图像坐标）
+- 距离计算（二维码与小车之间的距离）
+- 速度调整（根据距离动态调整小车速度）
+
+## 安装与配置
+
+### 环境要求
+
+- Python 3.x
+- OpenCV
+- python-can 库
+- pyzbar 库
+- 支持CAN总线的硬件环境
+- 摄像头设备
+
+### 安装依赖
+
+在项目根目录下运行以下命令安装所需库：
+
+```bash
+pip install -r requirements.txt
+```
+
+### 运行程序
+
+使用以下命令启动程序：
+
+```bash
+python src/main.py
+```
+
+## 使用说明
+
+1. 确保摄像头已正确连接并可被系统识别
+2. 确保CAN总线接口已正确配置并具有相应权限
+3. 运行程序后，系统会自动开始检测二维码
+4. 当检测到二维码时，小车会自动前进
+5. 未检测到二维码时，小车会停止
+6. 按下键盘上的"q"键退出程序
+
+## 技术细节
+
+### 摄像头参数
+
+- 分辨率：640x480像素
+- 编码格式：MJPEG
+- 自动对焦模式：连续
+- 目标帧率：30 FPS
+
+### CAN总线配置
+
+- 波特率：1000000 bps
+- 通道：can0和can1
+
+### TCP通信设置
+
+- 主机：127.0.0.1（本地主机）
+- 端口：9000
+- 通信协议：TCP/IP
+
+## 常见问题与解决方案
+
+1. **摄像头初始化失败**
+   - 检查摄像头连接是否正确
+   - 确保系统已安装摄像头驱动
+   - 尝试使用其他摄像头程序测试设备是否正常
+
+2. **CAN总线错误**
+   - 检查CAN总线硬件连接
+   - 确保用户具有CAN总线操作权限
+   - 检查CAN总线波特率配置是否正确
+
+3. **二维码检测不稳定**
+   - 确保环境光照充足
+   - 调整摄像头焦距以获得清晰图像
+   - 尝试调整图像预处理参数
+
+## 扩展开发指南
+
+### 改进二维码检测算法
+
+可以通过以下方法提高二维码检测的准确性和稳定性：
+
+1. 优化图像预处理算法，适应不同光照条件
+2. 添加多线程处理，分离图像采集和二维码检测
+3. 增加二维码跟踪功能，提高连续检测的稳定性
+4. 实现二维码方向识别，支持更复杂的导航场景
+
+### 增强小车控制功能
+
+可以扩展以下功能来增强小车的控制能力：
+
+1. 完善`turn_left()`和`turn_right()`方法，实现精确的转向控制
+2. 优化`align_to_qr()`方法，实现更精确的二维码对齐
+3. 添加避障功能，提高系统安全性
+4. 实现路径规划功能，支持多二维码导航
