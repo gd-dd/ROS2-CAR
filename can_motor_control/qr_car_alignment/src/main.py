@@ -10,8 +10,6 @@ from car_control import CarController
 from utils import preprocess_image
 # 导入socket库，用于TCP通信
 import socket
-# 导入LED控制相关函数
-from led_control import init_led_strips, turn_on_leds, turn_off_leds, cleanup
 
 # 心跳循环函数，用于定期向电机发送心跳信号
 # 参数: controller - CarController实例，用于发送心跳
@@ -30,13 +28,6 @@ def main():
     # 启动心跳线程，确保电机通信稳定
     # daemon=True表示主线程结束时，心跳线程也会自动结束
     threading.Thread(target=heartbeat_loop, args=(controller,), daemon=True).start()
-    
-    # 初始化LED灯条
-    print("初始化LED灯条...")
-    strip_white, strip_red = init_led_strips()
-    # 打开LED灯
-    turn_on_leds(strip_white, strip_red)
-    print("LED灯已打开")
 
     # 导入subprocess和signal库，用于启动和控制外部进程
     import subprocess
@@ -213,11 +204,6 @@ def main():
             sock.close()
         # 关闭CAN总线连接，确保资源正确释放
         controller.shutdown()
-        # 关闭LED灯并清理资源
-        print("正在关闭LED灯...")
-        turn_off_leds(strip_white, strip_red)
-        cleanup()
-        print("LED灯已关闭")
 
 # 如果直接运行此脚本，则执行main函数
 if __name__ == "__main__":
